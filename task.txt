@@ -1,0 +1,72 @@
+# Technical Assessment: AI-Assisted Global Mapping Engine
+
+## 🌍 Context & Business Need
+
+In our business, we aggregate travel inventory from multiple global suppliers. Each supplier has its own database of cities and hotels, complete with different naming conventions, misspellings, local language variations, and unique IDs.
+
+To provide a seamless experience for our customers, we need to build a dynamic mapping system that unifies this data into a "Master Catalog" in real-time as new data is ingested.
+
+## 🎯 The Challenge
+
+Your task is to build an API-driven mapping solution that takes unmapped city and hotel data from various suppliers and accurately groups identical entities together.
+
+> 💡 **Note:** You are provided with **two CSV files** containing sample data from multiple suppliers (one for cities, one for hotels).
+> 
+
+## ⚙️ Core System Requirements
+
+### Endpoints
+
+You need to develop two main endpoints:
+
+- **Add City Endpoint:** * Accepts: city_name, state_code, country_code, supplier_name.
+- **Add Hotel Endpoint:** * Accepts: Detailed hotel data (based on the provided hotel CSV structure).
+
+### Workflow & Logic
+
+- **Initial State:** The system must start with an empty database.
+- **On Insert:** When a new record (city or hotel) is sent to the endpoint, the system should evaluate it against the existing records in the database.
+- **No Match (New Entity):** If it's the first record or no match is found, insert it and return the newly created element.
+- **Match Found:** If the incoming record matches an existing record in the database, it should be mapped/linked to it, and the endpoint should return the matched master entity.
+- **⚠️ Edge Case Alert:** Suppliers might have duplicate data within their *own* databases. Your system should be capable of matching and merging records coming from the *same* supplier, not just across different suppliers.
+
+## 🤖 Tech Stacks
+
+- Python: (FastAPI)
+- Frontend:
+    - You can use any Front end library in python for example (streamlit, ..)
+    - You can also use React as FrontEnd app that connects through API
+
+## 🚦 Technical Constraints & Priorities
+
+- **🎯 Accuracy is Paramount:** A wrong mapping (e.g., mapping a hotel in "Alexandria, Egypt" to "Alexandria, Virginia") costs us money. Maximize correct mappings and strictly minimize false positives.
+- **📈 Extreme Scalability:** While the sample CSVs are small, your underlying architecture and logic must be capable of handling and processing **millions** of records globally.
+- **⚡ Speed:** Efficiency matters, but we will gladly sacrifice a little bit of speed for a significant gain in accuracy.
+- **🐳 Docker (Required):** Your entire application, including the database and any external services you use, must be fully containerized. We should be able to run docker-compose up to spin up your environment.
+
+## 🤖 The "AI-First" Requirement (Crucial)
+
+> **We do not expect you to write every line of code from scratch. In fact, we expect the exact opposite.** >
+> 
+> 
+> We are looking for modern developers who heavily leverage AI tools (Claude, ChatGPT, Cursor, Windsurf, etc.) to multiply their productivity. You will be evaluated not just on the final code, but on **how** you engineered the solution using AI.
+> 
+
+## ✨ Bonus Feature (Optional but highly impressive)
+
+- A simple UI, dashboard, or visual representation to view the current mappings and how entities are grouped together.
+
+## 📦 Deliverables
+
+- **The Code:** A link to a GitHub repository containing your clean, runnable code and Docker configuration.
+- **Business & Architecture Doc:** A brief README explaining your approach, your mapping logic/algorithm, how you handled edge cases, and why your solution scales.
+- **The Prompt Log (Required):** An exported log, markdown file, or shared links of your exact conversations with the AI. We want to see:
+    - How you broke down this complex problem.
+    - How you guided the AI to write, refactor, and optimize the code.
+    - How you debugged issues or hallucinations.
+
+## Sample Data
+
+Hotels Data ⇒ https://docs.google.com/spreadsheets/d/1Gtnrm8_C1lyuXeSlRoXFK7qK-45qPqSbjlN5yPUWw78/edit?usp=sharing
+
+Cities Data ⇒ https://docs.google.com/spreadsheets/d/1Gtnrm8_C1lyuXeSlRoXFK7qK-45qPqSbjlN5yPUWw78/edit?gid=307817218#gid=307817218
