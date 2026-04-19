@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+
+  # -----------------------------------------------------------------------
+  # PostgreSQL — only used in Docker deployment
+  # -----------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mappingdb
+      POSTGRES_USER: mapper
+      POSTGRES_PASSWORD: mapperpass
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"         # exposed for optional local access / pgAdmin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mapper -d mappingdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # -----------------------------------------------------------------------
+  # FastAPI backend
+  # -----------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside Docker → use the containerized Postgres
+      DATABASE_URL: "postgresql://mapper:mapperpass@db:5432/mappingdb"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount sample data so the ingest script can access it inside the container
+      - ./Sample Hotel Data - Cities.csv:/data/cities.csv:ro
+      - ./Sample Hotel Data - Hotels.csv:/data/hotels.csv:ro
+
+  # -----------------------------------------------------------------------
+  # Streamlit frontend
+  # -----------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_URL: "http://api:8000"
+    ports:
+      - "8501:8501"
+
+volumes:
+  pg_data:

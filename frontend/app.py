@@ -1,0 +1,283 @@
+"""
+app.py — Streamlit Dashboard for the Travel Mapping Engine
+----------------------------------------------------------
+Pages:
+  📊 Overview   — Live stats (totals, supplier vs master compression ratio)
+  🏙️ Cities     — Browse & search master cities, see linked supplier records
+  🏨 Hotels     — Browse & search master hotels with an interactive map
+  📥 Ingest CSV — Upload a raw CSV and stream it to the API in real-time
+"""
+
+import json
+import os
+import time
+
+import pandas as pd
+import requests
+import streamlit as st
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+API_BASE = os.getenv("API_URL", "http://localhost:8000")
+
+st.set_page_config(
+    page_title="Travel Mapping Engine",
+    page_icon="🗺️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def api_get(path: str, params: dict = None):
+    try:
+        r = requests.get(f"{API_BASE}{path}", params=params, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Cannot connect to the API. Make sure the backend is running.")
+        return None
+    except Exception as e:
+        st.error(f"API error: {e}")
+        return None
+
+
+def api_post(path: str, payload: dict):
+    try:
+        r = requests.post(f"{API_BASE}{path}", json=payload, timeout=10)
+        r.raise_for_status()
+        return r.json(), None
+    except requests.exceptions.HTTPError as e:
+        return None, str(e)
+    except Exception as e:
+        return None, str(e)
+
+
+# ---------------------------------------------------------------------------
+# Sidebar navigation
+# ---------------------------------------------------------------------------
+
+st.sidebar.image("https://i.imgur.com/your-logo.png", use_column_width=True) if False else None
+st.sidebar.title("🗺️ Mapping Engine")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Navigate",
+    ["📊 Overview", "🏙️ Cities", "🏨 Hotels", "📥 Ingest CSV"],
+    label_visibility="collapsed",
+)
+
+st.sidebar.markdown("---")
+st.sidebar.caption(f"API: `{API_BASE}`")
+
+# ---------------------------------------------------------------------------
+# Page: Overview
+# ---------------------------------------------------------------------------
+
+if page == "📊 Overview":
+    st.title("📊 Mapping Engine Overview")
+
+    stats = api_get("/stats")
+    if stats:
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Master Cities", f"{stats['master_cities']:,}")
+        col2.metric("Master Hotels", f"{stats['master_hotels']:,}")
+        col3.metric("Supplier Cities", f"{stats['supplier_cities']:,}")
+        col4.metric("Supplier Hotels", f"{stats['supplier_hotels']:,}")
+
+        st.markdown("---")
+        st.subheader("Deduplication Compression")
+
+        if stats["supplier_cities"] > 0:
+            city_ratio = stats["supplier_cities"] / max(stats["master_cities"], 1)
+            st.metric(
+                "City Compression Ratio",
+                f"{city_ratio:.2f}x",
+                help="How many supplier records map to each master city on average",
+            )
+
+        if stats["supplier_hotels"] > 0:
+            hotel_ratio = stats["supplier_hotels"] / max(stats["master_hotels"], 1)
+            st.metric(
+                "Hotel Compression Ratio",
+                f"{hotel_ratio:.2f}x",
+                help="How many supplier records map to each master hotel on average",
+            )
+
+        if stats["master_cities"] == 0 and stats["master_hotels"] == 0:
+            st.info("No data ingested yet. Use the **Ingest CSV** page to load data.")
+
+# ---------------------------------------------------------------------------
+# Page: Cities
+# ---------------------------------------------------------------------------
+
+elif page == "🏙️ Cities":
+    st.title("🏙️ Master Cities")
+
+    col1, col2 = st.columns([2, 1])
+    country_filter = col1.text_input("Filter by country code (e.g. EG, ES)", "").upper()
+    limit = col2.selectbox("Results per page", [25, 50, 100, 200], index=1)
+
+    data = api_get("/cities/", params={"country_code": country_filter or None, "limit": limit})
+
+    if data:
+        st.caption(f"Showing {len(data['results'])} of {data['total']:,} master cities")
+        df = pd.DataFrame(data["results"])
+        if not df.empty:
+            st.dataframe(
+                df.rename(columns={
+                    "id": "Master ID",
+                    "name": "City Name",
+                    "state_code": "State",
+                    "country_code": "Country",
+                    "supplier_count": "Suppliers",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.markdown("---")
+            st.subheader("View City Details")
+            city_id = st.number_input("Enter Master City ID", min_value=1, step=1)
+            if st.button("Load Hotels for this City"):
+                detail = api_get(f"/cities/{int(city_id)}/hotels")
+                if detail:
+                    st.json(detail)
+
+# ---------------------------------------------------------------------------
+# Page: Hotels
+# ---------------------------------------------------------------------------
+
+elif page == "🏨 Hotels":
+    st.title("🏨 Master Hotels")
+
+    col1, col2, col3 = st.columns([2, 1, 1])
+    country_filter = col1.text_input("Filter by country code", "").upper()
+    limit = col3.selectbox("Results per page", [25, 50, 100, 200], index=1)
+
+    data = api_get("/hotels/", params={"country_code": country_filter or None, "limit": limit})
+
+    if data:
+        st.caption(f"Showing {len(data['results'])} of {data['total']:,} master hotels")
+        df = pd.DataFrame(data["results"])
+
+        if not df.empty:
+            st.dataframe(
+                df.rename(columns={
+                    "id": "Master ID",
+                    "name": "Hotel Name",
+                    "country_code": "Country",
+                    "stars": "⭐",
+                    "type": "Type",
+                    "supplier_count": "Suppliers",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # Map view for hotels with coordinates
+            map_df = df.dropna(subset=["latitude", "longitude"])
+            if not map_df.empty:
+                st.markdown("---")
+                st.subheader("📍 Map View")
+                st.map(map_df[["latitude", "longitude"]].rename(
+                    columns={"latitude": "lat", "longitude": "lon"}
+                ))
+
+# ---------------------------------------------------------------------------
+# Page: Ingest CSV
+# ---------------------------------------------------------------------------
+
+elif page == "📥 Ingest CSV":
+    st.title("📥 Ingest Supplier CSV")
+    st.markdown(
+        "Upload a cleaned supplier CSV and stream each row to the mapping API. "
+        "The engine will deduplicate records in real-time."
+    )
+
+    entity_type = st.radio("Entity type", ["Cities", "Hotels"], horizontal=True)
+    supplier_name = st.text_input("Supplier name", placeholder="e.g. SupplierA")
+    uploaded = st.file_uploader("Upload CSV", type=["csv"])
+
+    if uploaded and supplier_name and st.button("🚀 Start Ingestion"):
+        df = pd.read_csv(uploaded, dtype=str)
+        df = df.where(pd.notna(df), None)  # convert NaN → None
+
+        total = len(df)
+        new_masters = 0
+        errors = 0
+
+        progress = st.progress(0, text="Starting ingestion…")
+        status_box = st.empty()
+        results_placeholder = st.empty()
+        log_lines = []
+
+        endpoint = f"/{entity_type.lower()}/"
+
+        for i, row in df.iterrows():
+            row_dict = row.to_dict()
+
+            if entity_type == "Cities":
+                payload = {
+                    "city_name": row_dict.get("city_name") or row_dict.get("name"),
+                    "state_code": row_dict.get("state_code"),
+                    "country_code": row_dict.get("country_code", ""),
+                    "supplier_name": supplier_name,
+                    "supplier_id": row_dict.get("supplier_id"),
+                    "supplier_city_id": row_dict.get("id") or row_dict.get("supplier_city_id"),
+                    "city_code": row_dict.get("city_code"),
+                    "meta": None,
+                }
+            else:  # Hotels
+                # Parse address JSON if present
+                raw_address = row_dict.get("address")
+                if raw_address and isinstance(raw_address, str):
+                    try:
+                        parsed_address = json.loads(raw_address)
+                    except Exception:
+                        parsed_address = {}
+                else:
+                    parsed_address = {}
+
+                payload = {
+                    "name": row_dict.get("name", ""),
+                    "country_code": row_dict.get("country_code", ""),
+                    "supplier_name": supplier_name,
+                    "supplier_id": row_dict.get("supplier_id"),
+                    "supplier_hotel_id": row_dict.get("supplier_hotel_id") or row_dict.get("id"),
+                    "city_code": row_dict.get("city_code"),
+                    "state_code": row_dict.get("state_code"),
+                    "zone_code": row_dict.get("zone_code"),
+                    "stars": row_dict.get("stars"),
+                    "hotel_type": row_dict.get("type"),
+                    "address": parsed_address,
+                }
+
+            result, err = api_post(endpoint, payload)
+
+            if err:
+                errors += 1
+                log_lines.append(f"❌ Row {i + 1}: {err}")
+            elif result:
+                if result.get("is_new"):
+                    new_masters += 1
+                log_lines.append(
+                    f"✅ Row {i + 1}: master_id={result.get('id')} "
+                    f"{'[NEW]' if result.get('is_new') else '[MATCHED]'}"
+                )
+
+            pct = (i + 1) / total
+            progress.progress(pct, text=f"Processing row {i + 1} / {total}")
+            results_placeholder.text("\n".join(log_lines[-20:]))  # show last 20 lines
+
+        progress.progress(1.0, text="Done!")
+        status_box.success(
+            f"Ingestion complete: {total} rows processed | "
+            f"{new_masters} new master records created | "
+            f"{total - new_masters - errors} matched | "
+            f"{errors} errors"
+        )
