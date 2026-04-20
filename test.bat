@@ -5,6 +5,7 @@ echo ========================================================
 echo.
 
 REM Ensure the testing module uses the current Python environment
+call venv\Scripts\activate.bat
 python -m pytest backend/tests/ -v
 
 echo.
