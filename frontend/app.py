@@ -57,6 +57,18 @@ def api_post(path: str, payload: dict):
         return None, str(e)
 
 
+def _sanitize(obj):
+    """Recursively replace float NaN / Infinity with None for JSON safety."""
+    import math
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # Sidebar navigation
 # ---------------------------------------------------------------------------
@@ -232,6 +244,7 @@ elif page == "📥 Ingest CSV":
                     "city_code": row_dict.get("city_code"),
                     "meta": None,
                 }
+                payload = _sanitize(payload)
             else:  # Hotels
                 # Parse address JSON if present
                 raw_address = row_dict.get("address")
@@ -256,6 +269,7 @@ elif page == "📥 Ingest CSV":
                     "hotel_type": row_dict.get("type"),
                     "address": parsed_address,
                 }
+                payload = _sanitize(payload)
 
             result, err = api_post(endpoint, payload)
 

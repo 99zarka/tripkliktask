@@ -11,10 +11,29 @@ Endpoints:
   GET  /health   — Simple liveness check.
 """
 
+import logging
+import sys
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+# Ensure local log directory exists dynamically
+os.makedirs("logs", exist_ok=True)
+
+# Configure dual-logging engine (Console + Persistent File)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    handlers=[
+        logging.FileHandler("logs/engine.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+import time
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 import models  # noqa: F401 — ensure models are registered with Base
@@ -39,9 +58,11 @@ from schemas import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Run DB initialisation on startup."""
+    logger.info("Initializing Database schemas and extensions...")
     init_db()
+    logger.info("Database initialized successfully.")
     yield
+    logger.info("Application shutting down.")
 
 
 app = FastAPI(
@@ -60,6 +81,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Request / Response logging middleware
+# ---------------------------------------------------------------------------
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log every incoming request and outgoing response with timing."""
+    start = time.perf_counter()
+    client = request.client.host if request.client else "unknown"
+    logger.info(f"REQUEST  {request.method} {request.url.path} from {client}")
+
+    try:
+        response: Response = await call_next(request)
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.error(
+            f"RESPONSE {request.method} {request.url.path} - UNHANDLED ERROR "
+            f"({elapsed_ms:.1f}ms): {exc}",
+            exc_info=True,
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        f"RESPONSE {request.method} {request.url.path} "
+        f"status={response.status_code} ({elapsed_ms:.1f}ms)"
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +134,10 @@ def add_city(payload: CityIngest, db: Session = Depends(get_db)):
 
     Returns the matched or newly created MasterCity, with `is_new` flag.
     """
+    logger.info(
+        f"POST /cities/ - supplier={payload.supplier_name!r} "
+        f"city={payload.city_name!r} country={payload.country_code}"
+    )
     try:
         master, is_new = find_or_create_master_city(
             db=db,
@@ -107,7 +162,7 @@ def add_city(payload: CityIngest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(master)
 
-        return MasterCityOut(
+        result = MasterCityOut(
             id=master.id,
             name=master.name,
             normalized_name=master.normalized_name,
@@ -115,9 +170,15 @@ def add_city(payload: CityIngest, db: Session = Depends(get_db)):
             country_code=master.country_code,
             is_new=is_new,
         )
+        logger.info(
+            f"POST /cities/ - master_id={master.id} name={master.name!r} "
+            f"is_new={is_new}"
+        )
+        return result
 
     except Exception as exc:
         db.rollback()
+        logger.error(f"Error during city ingestion (payload={payload.city_name}): {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
@@ -136,6 +197,10 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
 
     Returns the matched or newly created MasterHotel, with `is_new` flag.
     """
+    logger.info(
+        f"POST /hotels/ - supplier={payload.supplier_name!r} "
+        f"name={payload.name!r} country={payload.country_code}"
+    )
     try:
         addr = payload.get_parsed_address()
 
@@ -184,7 +249,7 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(master)
 
-        return MasterHotelOut(
+        result = MasterHotelOut(
             id=master.id,
             name=master.name,
             normalized_name=master.normalized_name,
@@ -194,9 +259,15 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
             stars=master.stars,
             is_new=is_new,
         )
+        logger.info(
+            f"POST /hotels/ - master_id={master.id} name={master.name!r} "
+            f"is_new={is_new}"
+        )
+        return result
 
     except Exception as exc:
         db.rollback()
+        logger.error(f"Error during hotel ingestion (payload={payload.name}): {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
