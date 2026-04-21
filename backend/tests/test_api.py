@@ -30,9 +30,13 @@ def override_get_db():
     try:
         mock_db = MagicMock()
         
-        # Mock basic `.count()` for stats
+        # Mock basic `.count()` for stats and list endpoints
         mock_db.query.return_value.count.return_value = 10
-        
+        mock_db.query.return_value.filter.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.filter.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.offset.return_value.limit.return_value.all.return_value = []
+        mock_db.query.return_value.outerjoin.return_value.filter.return_value.offset.return_value.limit.return_value.all.return_value = []
         # Make the generic offset return empty list by default
         mock_db.query.return_value.offset.return_value.limit.return_value.all.return_value = []
         
@@ -69,9 +73,12 @@ def test_list_cities_endpoint():
     def override_get_db_cities():
         mock_db = MagicMock()
         mock_db.query.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.filter.return_value.count.return_value = 10
         mock_city = MasterCity(id=1, name="Mock City", state_code="MC", country_code="US")
         mock_city.supplier_cities = []
-        mock_db.query.return_value.offset.return_value.limit.return_value.all.return_value = [mock_city]
+        mock_db.query.return_value.outerjoin.return_value.offset.return_value.limit.return_value.all.return_value = [(mock_city, 3)]
+        mock_db.query.return_value.outerjoin.return_value.filter.return_value.offset.return_value.limit.return_value.all.return_value = [(mock_city, 3)]
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db_cities
@@ -82,6 +89,7 @@ def test_list_cities_endpoint():
     
     assert data["total"] == 10
     assert data["results"][0]["name"] == "Mock City"
+    assert data["results"][0]["supplier_count"] == 3
 
 
 @patch('main.Session', new_callable=MagicMock)
@@ -90,9 +98,10 @@ def test_list_hotels_endpoint(mock_session):
     def override_get_db_hotels():
         mock_db = MagicMock()
         mock_db.query.return_value.count.return_value = 10
+        mock_db.query.return_value.outerjoin.return_value.count.return_value = 10
         mock_hotel = MasterHotel(id=1, name="Mock Hotel", latitude=10.0, longitude=10.0, country_code="US", stars=5)
         mock_hotel.supplier_hotels = []
-        mock_db.query.return_value.offset.return_value.limit.return_value.all.return_value = [mock_hotel]
+        mock_db.query.return_value.outerjoin.return_value.offset.return_value.limit.return_value.all.return_value = [(mock_hotel, 2)]
         yield mock_db
 
     app.dependency_overrides[get_db] = override_get_db_hotels
@@ -102,8 +111,7 @@ def test_list_hotels_endpoint(mock_session):
     data = response.json()
     
     assert data["total"] == 10
-    
-    # Passing limit parameters implicitly tested via testclient mapping
+
     response = client.get("/hotels/?limit=25&country_code=US")
     assert response.status_code == 200
     assert response.json()["limit"] == 25
@@ -155,7 +163,7 @@ def test_post_city_endpoint(mock_upsert, mock_find):
     """Test standard valid payload flow natively injecting into router."""
     # Define our matcher response payload: (MasterCity, is_new boolean)
     mock_master = MasterCity(id=50, name="Tokyo", normalized_name="tokyo", state_code=None, country_code="JP")
-    mock_find.return_value = (mock_master, True)
+    mock_find.return_value = (mock_master, True, 0.0)  # 3-tuple: entity, is_new, confidence
     
     payload = {
         "city_name": "Tokyo",
@@ -170,6 +178,7 @@ def test_post_city_endpoint(mock_upsert, mock_find):
     assert data["id"] == 50
     assert data["name"] == "Tokyo"
     assert data["is_new"] is True
+    assert "confidence_score" in data
     
     # Ensure our API endpoint actually triggered the deduplicating matcher engines internally
     mock_find.assert_called_once()
@@ -181,7 +190,7 @@ def test_post_city_endpoint(mock_upsert, mock_find):
 def test_post_hotel_endpoint(mock_upsert, mock_find):
     """Test standardized Hotel insertion."""
     mock_master = MasterHotel(id=101, name="Pyramid", normalized_name="pyramid", latitude=30.0, longitude=30.0, country_code="EG", stars=4)
-    mock_find.return_value = (mock_master, False)
+    mock_find.return_value = (mock_master, False, 87.5)  # 3-tuple: entity, is_new, confidence
     
     payload = {
         "name": "Pyramid",
@@ -198,6 +207,7 @@ def test_post_hotel_endpoint(mock_upsert, mock_find):
     assert data["country_code"] == "EG"
     assert data["is_new"] is False
     assert data["latitude"] == 30.0
+    assert "confidence_score" in data
     
     mock_find.assert_called_once()
     mock_upsert.assert_called_once()

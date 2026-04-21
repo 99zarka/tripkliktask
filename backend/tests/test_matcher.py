@@ -91,7 +91,7 @@ def test_find_or_create_city_exact_match():
     # state_code is None, so it only chains one .filter() call
     mock_db.query.return_value.filter.return_value.first.return_value = mock_city
 
-    master, is_new = find_or_create_master_city(mock_db, "Cairo", None, "EG")
+    master, is_new, confidence = find_or_create_master_city(mock_db, "Cairo", None, "EG")
     assert is_new is False
     assert master.id == 1
 
@@ -112,7 +112,7 @@ def test_find_or_create_city_fuzzy_match(mock_text):
     mock_city = MasterCity(id=42, name="Alexndria", normalized_name="alexndria", country_code="EG")
     mock_db.get.return_value = mock_city
 
-    master, is_new = find_or_create_master_city(mock_db, "Alexandria", None, "EG")
+    master, is_new, confidence = find_or_create_master_city(mock_db, "Alexandria", None, "EG")
     assert is_new is False
     assert master.id == 42
 
@@ -125,13 +125,14 @@ def test_find_or_create_city_no_match():
     # No fuzzy
     mock_db.execute.return_value.fetchone.return_value = None
 
-    master, is_new = find_or_create_master_city(mock_db, "New City", "XX", "US")
+    master, is_new, confidence = find_or_create_master_city(mock_db, "New City", "XX", "US")
     assert is_new is True
     assert master.name == "New City"
     assert master.country_code == "US"
     # Ensure add and flush are called
     mock_db.add.assert_called_once()
     mock_db.flush.assert_called_once()
+    assert confidence == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +152,7 @@ def test_find_or_create_hotel_geo_match(mock_name_candidates, mock_geo_candidate
     )
     mock_geo_candidates.return_value = [candidate]
 
-    master, is_new = find_or_create_master_hotel(
+    master, is_new, confidence = find_or_create_master_hotel(
         db=mock_db,
         name="The Ritz-Carlton",
         country_code="US",
@@ -168,10 +169,10 @@ def test_find_or_create_hotel_geo_match(mock_name_candidates, mock_geo_candidate
     mock_geo_candidates.assert_called_once()
     # Name only fallback shouldn't fire
     mock_name_candidates.assert_not_called()
-    
-    # Score is 100 since streets match and token_set matches "Ritz Carlton"
+
     assert is_new is False
     assert master.id == 99
+    assert confidence > 0
 
 
 @patch('matcher._geo_candidates')
@@ -183,7 +184,7 @@ def test_find_or_create_hotel_no_coords(mock_name_candidates, mock_geo_candidate
     # No candidate found in fallback
     mock_name_candidates.return_value = []
 
-    master, is_new = find_or_create_master_hotel(
+    master, is_new, confidence = find_or_create_master_hotel(
         db=mock_db,
         name="Hotel Missing Coords",
         country_code="EG",
@@ -198,7 +199,8 @@ def test_find_or_create_hotel_no_coords(mock_name_candidates, mock_geo_candidate
 
     assert is_new is True
     assert master.name == "Hotel Missing Coords"
-    
+    assert confidence == 0.0
+
     # Geo candidates should strictly be circumvented since lat/lon == None
     mock_geo_candidates.assert_not_called()
     mock_name_candidates.assert_called_once()

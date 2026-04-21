@@ -7,7 +7,7 @@ City Matching Strategy:
   - Normalize name (lowercase, strip accents, remove punctuation).
   - Match against master_cities using: normalized_name + country_code (exact),
     then fallback to pg_trgm similarity search (fuzzy).
-  - Threshold: similarity >= 0.85 required to count as a match.
+  - Threshold: similarity >= 0.92 required to count as a match.
 
 Hotel Matching Strategy (Two-Pass):
   Pass 1 — Geographic Blocking:
@@ -41,7 +41,7 @@ from models import MasterCity, MasterHotel, SupplierCity, SupplierHotel
 # Configuration
 # ---------------------------------------------------------------------------
 
-CITY_SIMILARITY_THRESHOLD = 0.85    # pg_trgm similarity (0–1)
+CITY_SIMILARITY_THRESHOLD = 0.92    # pg_trgm similarity (0–1) — raised for accuracy
 HOTEL_GEO_RADIUS_M = 300            # metres for geographic blocking
 HOTEL_SCORE_THRESHOLD = 72          # composite score 0–100
 HOTEL_NAME_WEIGHT = 0.70
@@ -100,9 +100,12 @@ def find_or_create_master_city(
     city_name: str,
     state_code: Optional[str],
     country_code: str,
-) -> tuple[MasterCity, bool]:
+) -> tuple[MasterCity, bool, float]:
     """
-    Return (MasterCity, is_new).
+    Return (MasterCity, is_new, confidence_score).
+    - Exact match  → confidence 100.0
+    - Fuzzy match  → confidence = pg_trgm similarity * 100
+    - New record   → confidence 0.0
     Tries exact normalized match first, then pg_trgm fuzzy match.
     """
     norm = normalize_name(city_name)
@@ -118,7 +121,7 @@ def find_or_create_master_city(
 
     exact = query.first()
     if exact:
-        return exact, False
+        return exact, False, 100.0
 
     # --- Fuzzy match via pg_trgm (handles misspellings, diacritics) ---
     # Only search within the same country to avoid false positives
@@ -141,7 +144,8 @@ def find_or_create_master_city(
 
     if row:
         master = db.get(MasterCity, row.id)
-        return master, False
+        confidence = round(row.sim * 100, 2)
+        return master, False, confidence
 
     # --- No match — create new master ---
     master = MasterCity(
@@ -152,7 +156,7 @@ def find_or_create_master_city(
     )
     db.add(master)
     db.flush()  # get the auto-generated ID before commit
-    return master, True
+    return master, True, 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -215,25 +219,43 @@ def _name_only_candidates(
     db: Session,
     norm_name: str,
     country_code: str,
+    city_code: Optional[str] = None,
 ) -> list[MasterHotel]:
-    """Fuzzy name-only candidate search when no coordinates are available."""
+    """Fuzzy name-only candidate search when no coordinates are available.
+    Narrows by city_code when provided to avoid cross-city false positives.
+    """
     try:
-        sql = text("""
-            SELECT id
-            FROM master_hotels
-            WHERE country_code = :country
-              AND similarity(normalized_name, :norm) >= :threshold
-            ORDER BY similarity(normalized_name, :norm) DESC
-            LIMIT 10
-        """)
-        rows = db.execute(
-            sql,
-            {
+        if city_code:
+            sql = text("""
+                SELECT id
+                FROM master_hotels
+                WHERE country_code = :country
+                  AND city_code = :city_code
+                  AND similarity(normalized_name, :norm) >= :threshold
+                ORDER BY similarity(normalized_name, :norm) DESC
+                LIMIT 10
+            """)
+            params = {
+                "country": country_code,
+                "city_code": city_code.upper(),
+                "norm": norm_name,
+                "threshold": CITY_SIMILARITY_THRESHOLD,
+            }
+        else:
+            sql = text("""
+                SELECT id
+                FROM master_hotels
+                WHERE country_code = :country
+                  AND similarity(normalized_name, :norm) >= :threshold
+                ORDER BY similarity(normalized_name, :norm) DESC
+                LIMIT 10
+            """)
+            params = {
                 "country": country_code,
                 "norm": norm_name,
                 "threshold": CITY_SIMILARITY_THRESHOLD,
-            },
-        ).fetchall()
+            }
+        rows = db.execute(sql, params).fetchall()
         ids = [r.id for r in rows]
         if not ids:
             return []
@@ -253,13 +275,16 @@ def find_or_create_master_hotel(
     stars: Optional[int],
     hotel_type: Optional[str],
     master_city_id: Optional[int],
-) -> tuple[MasterHotel, bool]:
+) -> tuple[MasterHotel, bool, float]:
     """
     Two-Pass matching:
       Pass 1 — Geographic blocking  (if coordinates available)
+               Falls back to city_code-scoped name search if no coords.
       Pass 2 — Composite score filter
 
-    Returns (MasterHotel, is_new).
+    Returns (MasterHotel, is_new, confidence_score).
+    - Geo+fuzzy match → composite score (0–100)
+    - New record      → 0.0
     """
     norm = normalize_name(name)
 
@@ -267,7 +292,8 @@ def find_or_create_master_hotel(
     if latitude is not None and longitude is not None:
         candidates = _geo_candidates(db, latitude, longitude, country_code)
     else:
-        candidates = _name_only_candidates(db, norm, country_code)
+        # Pass city_code into fallback to constrain search scope
+        candidates = _name_only_candidates(db, norm, country_code, city_code=city_code)
 
     # ---------- Pass 2: scoring ----------
     best_master: Optional[MasterHotel] = None
@@ -282,7 +308,7 @@ def find_or_create_master_hotel(
             best_master = candidate
 
     if best_master and best_score >= HOTEL_SCORE_THRESHOLD:
-        return best_master, False
+        return best_master, False, round(best_score, 2)
 
     # ---------- No match — create new master ----------
     master = MasterHotel(
@@ -299,7 +325,7 @@ def find_or_create_master_hotel(
     )
     db.add(master)
     db.flush()
-    return master, True
+    return master, True, 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -54,6 +54,9 @@ class MasterCityOut(BaseModel):
     state_code: Optional[str]
     country_code: str
     is_new: bool = Field(description="True if a new master record was created")
+    confidence_score: float = Field(
+        description="Match confidence: 100.0=exact, 0.0=new, 0-100=fuzzy similarity"
+    )
 
     model_config = {"from_attributes": True}
 
@@ -158,5 +161,8 @@ class MasterHotelOut(BaseModel):
     country_code: str
     stars: Optional[int]
     is_new: bool = Field(description="True if a new master record was created")
+    confidence_score: float = Field(
+        description="Match confidence: 100.0=exact geo match, 0.0=new, else composite score"
+    )
 
     model_config = {"from_attributes": True}

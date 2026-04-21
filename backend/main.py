@@ -140,7 +140,7 @@ def add_city(payload: CityIngest, db: Session = Depends(get_db)):
         f"city={payload.city_name!r} country={payload.country_code}"
     )
     try:
-        master, is_new = find_or_create_master_city(
+        master, is_new, confidence_score = find_or_create_master_city(
             db=db,
             city_name=payload.city_name,
             state_code=payload.state_code,
@@ -170,10 +170,11 @@ def add_city(payload: CityIngest, db: Session = Depends(get_db)):
             state_code=master.state_code,
             country_code=master.country_code,
             is_new=is_new,
+            confidence_score=confidence_score,
         )
         logger.info(
             f"POST /cities/ - master_id={master.id} name={master.name!r} "
-            f"is_new={is_new}"
+            f"is_new={is_new} confidence={confidence_score}"
         )
         return result
 
@@ -208,15 +209,15 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
         # Attempt to resolve city if we have enough info
         master_city_id = None
         if payload.city_code and payload.country_code:
-            city_match = find_or_create_master_city(
+            city_match, _, _ = find_or_create_master_city(
                 db=db,
                 city_name=payload.city_code,   # use city_code as name proxy
                 state_code=payload.state_code,
                 country_code=payload.country_code,
             )
-            master_city_id = city_match[0].id
+            master_city_id = city_match.id
 
-        master, is_new = find_or_create_master_hotel(
+        master, is_new, confidence_score = find_or_create_master_hotel(
             db=db,
             name=payload.name,
             country_code=payload.country_code,
@@ -259,10 +260,11 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
             country_code=master.country_code,
             stars=master.stars,
             is_new=is_new,
+            confidence_score=confidence_score,
         )
         logger.info(
             f"POST /hotels/ - master_id={master.id} name={master.name!r} "
-            f"is_new={is_new}"
+            f"is_new={is_new} confidence={confidence_score}"
         )
         return result
 
