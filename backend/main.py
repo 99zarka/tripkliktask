@@ -34,6 +34,7 @@ import time
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import models  # noqa: F401 — ensure models are registered with Base
@@ -283,13 +284,25 @@ def list_cities(
     db: Session = Depends(get_db),
 ):
     """List master cities, optionally filtered by country_code."""
-    query = db.query(models.MasterCity)
-    if country_code:
-        query = query.filter(
-            models.MasterCity.country_code == country_code.upper()
+    # Single query with COUNT subquery — avoids N+1 lazy loads
+    count_sub = (
+        db.query(
+            models.SupplierCity.master_city_id,
+            func.count(models.SupplierCity.id).label("cnt"),
         )
-    cities = query.offset(skip).limit(limit).all()
+        .group_by(models.SupplierCity.master_city_id)
+        .subquery()
+    )
+    query = (
+        db.query(models.MasterCity, func.coalesce(count_sub.c.cnt, 0).label("supplier_count"))
+        .outerjoin(count_sub, models.MasterCity.id == count_sub.c.master_city_id)
+    )
+    if country_code:
+        query = query.filter(models.MasterCity.country_code == country_code.upper())
+
     total = query.count()
+    rows = query.offset(skip).limit(limit).all()
+
     return {
         "total": total,
         "skip": skip,
@@ -300,9 +313,9 @@ def list_cities(
                 "name": c.name,
                 "state_code": c.state_code,
                 "country_code": c.country_code,
-                "supplier_count": len(c.supplier_cities),
+                "supplier_count": supplier_count,
             }
-            for c in cities
+            for c, supplier_count in rows
         ],
     }
 
@@ -316,16 +329,27 @@ def list_hotels(
     db: Session = Depends(get_db),
 ):
     """List master hotels, optionally filtered by country or master city."""
-    query = db.query(models.MasterHotel)
-    if country_code:
-        query = query.filter(
-            models.MasterHotel.country_code == country_code.upper()
+    # Single query with COUNT subquery — avoids N+1 lazy loads
+    count_sub = (
+        db.query(
+            models.SupplierHotel.master_hotel_id,
+            func.count(models.SupplierHotel.id).label("cnt"),
         )
+        .group_by(models.SupplierHotel.master_hotel_id)
+        .subquery()
+    )
+    query = (
+        db.query(models.MasterHotel, func.coalesce(count_sub.c.cnt, 0).label("supplier_count"))
+        .outerjoin(count_sub, models.MasterHotel.id == count_sub.c.master_hotel_id)
+    )
+    if country_code:
+        query = query.filter(models.MasterHotel.country_code == country_code.upper())
     if city_id:
         query = query.filter(models.MasterHotel.master_city_id == city_id)
 
-    hotels = query.offset(skip).limit(limit).all()
     total = query.count()
+    rows = query.offset(skip).limit(limit).all()
+
     return {
         "total": total,
         "skip": skip,
@@ -339,9 +363,9 @@ def list_hotels(
                 "country_code": h.country_code,
                 "stars": h.stars,
                 "type": h.hotel_type,
-                "supplier_count": len(h.supplier_hotels),
+                "supplier_count": supplier_count,
             }
-            for h in hotels
+            for h, supplier_count in rows
         ],
     }
 

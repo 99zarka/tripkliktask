@@ -35,7 +35,7 @@ st.set_page_config(
 
 def api_get(path: str, params: dict = None):
     try:
-        r = requests.get(f"{API_BASE}{path}", params=params, timeout=10)
+        r = requests.get(f"{API_BASE}{path}", params=params, timeout=60)
         r.raise_for_status()
         return r.json()
     except requests.exceptions.ConnectionError:
