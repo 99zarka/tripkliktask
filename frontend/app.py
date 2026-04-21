@@ -130,11 +130,20 @@ if page == "📊 Overview":
 elif page == "🏙️ Cities":
     st.title("🏙️ Master Cities")
 
-    col1, col2 = st.columns([2, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
     country_filter = col1.text_input("Filter by country code (e.g. EG, ES)", "").upper()
-    limit = col2.selectbox("Results per page", [25, 50, 100, 200], index=1)
+    limit = col2.selectbox("Results per page", [25, 50, 100, 200], index=1, key="city_limit")
+    page_num = col3.number_input("Page", min_value=1, step=1, key="city_page")
+    dupes_only = col4.checkbox("Only show deduplicated entries (Suppliers > 1)", key="city_dupes")
 
-    data = api_get("/cities/", params={"country_code": country_filter or None, "limit": limit})
+    skip = (page_num - 1) * limit
+    params = {
+        "country_code": country_filter or None,
+        "duplicates_only": dupes_only,
+        "limit": limit,
+        "skip": skip
+    }
+    data = api_get("/cities/", params=params)
 
     if data:
         st.caption(f"Showing {len(data['results'])} of {data['total']:,} master cities")
@@ -178,11 +187,20 @@ elif page == "🏙️ Cities":
 elif page == "🏨 Hotels":
     st.title("🏨 Master Hotels")
 
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
     country_filter = col1.text_input("Filter by country code", "").upper()
-    limit = col3.selectbox("Results per page", [25, 50, 100, 200], index=1)
+    limit = col2.selectbox("Results per page", [25, 50, 100, 200], index=1, key="hotel_limit")
+    page_num = col3.number_input("Page", min_value=1, step=1, key="hotel_page")
+    dupes_only = col4.checkbox("Only show deduplicated entries (Suppliers > 1)", key="hotel_dupes")
 
-    data = api_get("/hotels/", params={"country_code": country_filter or None, "limit": limit})
+    skip = (page_num - 1) * limit
+    params = {
+        "country_code": country_filter or None,
+        "duplicates_only": dupes_only,
+        "limit": limit,
+        "skip": skip
+    }
+    data = api_get("/hotels/", params=params)
 
     if data:
         st.caption(f"Showing {len(data['results'])} of {data['total']:,} master hotels")
@@ -202,15 +220,6 @@ elif page == "🏨 Hotels":
                 hide_index=True,
             )
 
-            # Map view for hotels with coordinates
-            map_df = df.dropna(subset=["latitude", "longitude"])
-            if not map_df.empty:
-                st.markdown("---")
-                st.subheader("📍 Map View")
-                st.map(map_df[["latitude", "longitude"]].rename(
-                    columns={"latitude": "lat", "longitude": "lon"}
-                ))
-            
             st.markdown("---")
             st.subheader("🔍 Inspect Deduplication Mappings")
             hotel_id = st.number_input("Enter Master Hotel ID", min_value=1, step=1, key="hotel_inspect")

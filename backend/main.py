@@ -281,6 +281,7 @@ def add_hotel(payload: HotelIngest, db: Session = Depends(get_db)):
 @app.get("/cities/", tags=["Cities"])
 def list_cities(
     country_code: str | None = None,
+    duplicates_only: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -301,6 +302,8 @@ def list_cities(
     )
     if country_code:
         query = query.filter(models.MasterCity.country_code == country_code.upper())
+    if duplicates_only:
+        query = query.filter(count_sub.c.cnt > 1)
 
     total = query.count()
     rows = query.offset(skip).limit(limit).all()
@@ -326,6 +329,7 @@ def list_cities(
 def list_hotels(
     country_code: str | None = None,
     city_id: int | None = None,
+    duplicates_only: bool = Query(False),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -348,6 +352,8 @@ def list_hotels(
         query = query.filter(models.MasterHotel.country_code == country_code.upper())
     if city_id:
         query = query.filter(models.MasterHotel.master_city_id == city_id)
+    if duplicates_only:
+        query = query.filter(count_sub.c.cnt > 1)
 
     total = query.count()
     rows = query.offset(skip).limit(limit).all()
