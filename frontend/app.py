@@ -164,21 +164,12 @@ elif page == "🏙️ Cities":
             st.markdown("---")
             st.subheader("🔍 Inspect Deduplication Mappings")
             city_id = st.number_input("Enter Master City ID", min_value=1, step=1, key="city_inspect")
-            col_a, col_b = st.columns(2)
             
-            with col_a:
-                if st.button("Load Deduplicated Suppliers"):
-                    detail = api_get(f"/cities/{int(city_id)}/suppliers")
-                    if detail:
-                        st.success(f"Matched {len(detail['suppliers'])} supplier records to Master City '{detail['master_city']['name']}'")
-                        st.json(detail['suppliers'])
-            
-            with col_b:
-                if st.button("Load Hotels for this City"):
-                    detail = api_get(f"/cities/{int(city_id)}/hotels")
-                    if detail:
-                        st.info(f"Found {len(detail['hotels'])} hotels in Master City '{detail['master_city']['name']}'")
-                        st.dataframe(detail['hotels'], use_container_width=True)
+            if st.button("Load Deduplicated Suppliers"):
+                detail = api_get(f"/cities/{int(city_id)}/suppliers")
+                if detail:
+                    st.success(f"Matched {len(detail['suppliers'])} supplier records to Master City '{detail['master_city']['name']}'")
+                    st.json(detail['suppliers'])
 
 # ---------------------------------------------------------------------------
 # Page: Hotels
