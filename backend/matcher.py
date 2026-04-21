@@ -41,7 +41,7 @@ from models import MasterCity, MasterHotel, SupplierCity, SupplierHotel
 # Configuration
 # ---------------------------------------------------------------------------
 
-CITY_SIMILARITY_THRESHOLD = 0.92    # pg_trgm similarity (0–1) — raised for accuracy
+CITY_SIMILARITY_THRESHOLD = 0.85    # pg_trgm similarity (0–1) — raised for accuracy
 HOTEL_GEO_RADIUS_M = 300            # metres for geographic blocking
 HOTEL_SCORE_THRESHOLD = 72          # composite score 0–100
 HOTEL_NAME_WEIGHT = 0.70

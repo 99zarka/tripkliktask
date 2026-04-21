@@ -372,6 +372,30 @@ def list_hotels(
     }
 
 
+@app.get("/hotels/{hotel_id}/suppliers", tags=["Hotels"])
+def get_hotel_suppliers(hotel_id: int, db: Session = Depends(get_db)):
+    """Return all raw supplier hotels that have been deduplicated into this master hotel."""
+    hotel = db.get(models.MasterHotel, hotel_id)
+    if not hotel:
+        raise HTTPException(status_code=404, detail="Hotel not found")
+    
+    return {
+        "master_hotel": {"id": hotel.id, "name": hotel.name, "country_code": hotel.country_code},
+        "suppliers": [
+            {
+                "supplier_name": s.supplier_name,
+                "supplier_hotel_id": s.supplier_hotel_id,
+                "name": s.name,
+                "city_code": s.city_code,
+                "address": s.address,
+                "latitude": s.latitude,
+                "longitude": s.longitude,
+            }
+            for s in hotel.supplier_hotels
+        ]
+    }
+
+
 @app.get("/cities/{city_id}/hotels", tags=["Cities"])
 def get_city_hotels(city_id: int, db: Session = Depends(get_db)):
     """Return all master hotels belonging to a specific master city."""
@@ -384,6 +408,28 @@ def get_city_hotels(city_id: int, db: Session = Depends(get_db)):
             {"id": h.id, "name": h.name, "stars": h.stars, "supplier_count": len(h.supplier_hotels)}
             for h in city.master_hotels
         ],
+    }
+
+
+@app.get("/cities/{city_id}/suppliers", tags=["Cities"])
+def get_city_suppliers(city_id: int, db: Session = Depends(get_db)):
+    """Return all raw supplier cities that have been deduplicated into this master city."""
+    city = db.get(models.MasterCity, city_id)
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    
+    return {
+        "master_city": {"id": city.id, "name": city.name, "country_code": city.country_code},
+        "suppliers": [
+            {
+                "supplier_name": s.supplier_name,
+                "supplier_city_id": s.supplier_city_id,
+                "city_name": s.city_name,
+                "state_code": s.state_code,
+                "meta": s.meta,
+            }
+            for s in city.supplier_cities
+        ]
     }
 
 

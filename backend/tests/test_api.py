@@ -18,7 +18,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname((os.path.abspath(__file__)))))
 
 from main import app, get_db
-from models import MasterCity, MasterHotel
+from models import MasterCity, MasterHotel, SupplierCity, SupplierHotel
 
 client = TestClient(app)
 
@@ -142,19 +142,74 @@ def test_city_hotels_endpoint():
     app.dependency_overrides[get_db] = override_get_db
 
 
-def test_city_hotels_not_found():
-    mock_db = MagicMock()
-    mock_db.get.return_value = None
-    app.dependency_overrides[get_db] = lambda: mock_db
-    
+@patch('main.Session', new_callable=MagicMock)
+def test_city_hotels_not_found(mock_session):
+    def override_get_db_empty():
+        mock_db = MagicMock()
+        mock_db.get.return_value = None
+        yield mock_db
+        
+    app.dependency_overrides[get_db] = override_get_db_empty
     response = client.get("/cities/999/hotels")
     assert response.status_code == 404
-    
-    app.dependency_overrides[get_db] = override_get_db
+
+
+@patch('main.Session', new_callable=MagicMock)
+def test_city_suppliers_endpoint(mock_session):
+    def override_get_db_city_suppliers():
+        mock_db = MagicMock()
+        mock_city = MasterCity(id=1, name="Mock City", country_code="US")
+        
+        mock_supplier = SupplierCity(
+            supplier_name="SupX",
+            supplier_city_id="101",
+            city_name="Mock City SupX",
+            state_code="MC",
+            meta={"foo": "bar"}
+        )
+        mock_city.supplier_cities = [mock_supplier]
+        mock_db.get.return_value = mock_city
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_city_suppliers
+    response = client.get("/cities/1/suppliers")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["master_city"]["name"] == "Mock City"
+    assert len(data["suppliers"]) == 1
+    assert data["suppliers"][0]["supplier_name"] == "SupX"
+
+
+@patch('main.Session', new_callable=MagicMock)
+def test_hotel_suppliers_endpoint(mock_session):
+    def override_get_db_hotel_suppliers():
+        mock_db = MagicMock()
+        mock_hotel = MasterHotel(id=5, name="Mock Hotel", country_code="US")
+        
+        mock_supplier = SupplierHotel(
+            supplier_name="SupY",
+            supplier_hotel_id="505",
+            name="Mock Hotel Y",
+            city_code="NY",
+            latitude=10.0,
+            longitude=-10.0,
+            address={"street": "123 Main"}
+        )
+        mock_hotel.supplier_hotels = [mock_supplier]
+        mock_db.get.return_value = mock_hotel
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_get_db_hotel_suppliers
+    response = client.get("/hotels/5/suppliers")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["master_hotel"]["name"] == "Mock Hotel"
+    assert len(data["suppliers"]) == 1
+    assert data["suppliers"][0]["supplier_hotel_id"] == "505"
 
 
 # ---------------------------------------------------------------------------
-# Test POST Boundaries (Using matcher patching)
+# Test POST API logic
 # ---------------------------------------------------------------------------
 
 @patch('main.find_or_create_master_city')

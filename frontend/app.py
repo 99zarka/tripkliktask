@@ -153,12 +153,23 @@ elif page == "🏙️ Cities":
             )
 
             st.markdown("---")
-            st.subheader("View City Details")
-            city_id = st.number_input("Enter Master City ID", min_value=1, step=1)
-            if st.button("Load Hotels for this City"):
-                detail = api_get(f"/cities/{int(city_id)}/hotels")
-                if detail:
-                    st.json(detail)
+            st.subheader("🔍 Inspect Deduplication Mappings")
+            city_id = st.number_input("Enter Master City ID", min_value=1, step=1, key="city_inspect")
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if st.button("Load Deduplicated Suppliers"):
+                    detail = api_get(f"/cities/{int(city_id)}/suppliers")
+                    if detail:
+                        st.success(f"Matched {len(detail['suppliers'])} supplier records to Master City '{detail['master_city']['name']}'")
+                        st.json(detail['suppliers'])
+            
+            with col_b:
+                if st.button("Load Hotels for this City"):
+                    detail = api_get(f"/cities/{int(city_id)}/hotels")
+                    if detail:
+                        st.info(f"Found {len(detail['hotels'])} hotels in Master City '{detail['master_city']['name']}'")
+                        st.dataframe(detail['hotels'], use_container_width=True)
 
 # ---------------------------------------------------------------------------
 # Page: Hotels
@@ -199,6 +210,15 @@ elif page == "🏨 Hotels":
                 st.map(map_df[["latitude", "longitude"]].rename(
                     columns={"latitude": "lat", "longitude": "lon"}
                 ))
+            
+            st.markdown("---")
+            st.subheader("🔍 Inspect Deduplication Mappings")
+            hotel_id = st.number_input("Enter Master Hotel ID", min_value=1, step=1, key="hotel_inspect")
+            if st.button("Load Deduplicated Suppliers"):
+                detail = api_get(f"/hotels/{int(hotel_id)}/suppliers")
+                if detail:
+                    st.success(f"Matched {len(detail['suppliers'])} supplier records to Master Hotel '{detail['master_hotel']['name']}'")
+                    st.json(detail['suppliers'])
 
 # ---------------------------------------------------------------------------
 # Page: Ingest CSV
