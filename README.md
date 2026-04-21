@@ -7,8 +7,8 @@ A production-ready, AI-assisted, API-driven travel mapping engine built with **F
 > - **Goal:** Map, deduplicate, and merge millions of supplier travel records (cities/hotels) into a clean, unified Master Catalog.
 > - **Tech Stack:** FastAPI, PostgreSQL, AnyIO, Python 3.13, Docker, Streamlit (Bonus UI).
 > - **Methodology:** 'Accuracy > Speed'. Prioritizes zero false positives using strict geo-spatial blocking (`earthdistance`) and fuzzy confidence scoring (`thefuzz` & `pg_trgm`).
+> - **Bonus UI & Docs:** Fully interactive Streamlit dashboard and complete [Swagger API Documentation](http://localhost:8000/docs).
 > - **AI-First:** Engineered entirely via LLMs (Claude Sonnet & Gemini Pro) tracking prompting workflows, debugging, and advanced DB scaling strategies.
-> - **Bonus UI:** Fully interactive Streamlit dashboard mapping algorithms in real-time and inspecting duplicated supplier structures.
 
 ---
 
