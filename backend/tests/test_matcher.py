@@ -177,33 +177,66 @@ def test_find_or_create_hotel_geo_match(mock_name_candidates, mock_geo_candidate
 
 @patch('matcher._geo_candidates')
 @patch('matcher._name_only_candidates')
-def test_find_or_create_hotel_no_coords(mock_name_candidates, mock_geo_candidates):
-    """Edge Case: Payload missing coords falls back instantly to name_only (Pass 1 shift)"""
+def test_find_or_create_hotel_no_coords_with_city_code(mock_name_candidates, mock_geo_candidates):
+    """Edge Case: Hotel missing coords but HAS city_code forces city_code down to fallback query."""
     mock_db = MagicMock()
     
-    # No candidate found in fallback
     mock_name_candidates.return_value = []
 
     master, is_new, confidence = find_or_create_master_hotel(
         db=mock_db,
-        name="Hotel Missing Coords",
-        country_code="EG",
+        name="Hilton Paris",
+        country_code="FR",
         latitude=None,   # missing
         longitude=None,  # missing
-        street="No Street",
-        city_code=None,
-        stars=3,
+        street=None,
+        city_code="PAR", # present
+        stars=5,
         hotel_type=None,
-        master_city_id=2
+        master_city_id=10
     )
 
+    # Geo candidates strictly circumvented
+    mock_geo_candidates.assert_not_called()
+    # Verify city_code="PAR" was properly routed down to the fallback query constraint
+    mock_name_candidates.assert_called_once_with(mock_db, "hiltonparis", "FR", city_code="PAR")
     assert is_new is True
-    assert master.name == "Hotel Missing Coords"
     assert confidence == 0.0
 
-    # Geo candidates should strictly be circumvented since lat/lon == None
-    mock_geo_candidates.assert_not_called()
-    mock_name_candidates.assert_called_once()
+
+@patch('matcher._geo_candidates')
+@patch('matcher._name_only_candidates')
+def test_find_or_create_hotel_score_rejection(mock_name_candidates, mock_geo_candidates):
+    """Edge Case: Found geoblock candidate, but composite score falls below 72/100 threshold."""
+    mock_db = MagicMock()
+    
+    # Candidate physically close, but completely different name
+    candidate = MasterHotel(
+        id=88, name="Holiday Inn", normalized_name="holidayinn", 
+        street="Different Street"
+    )
+    mock_geo_candidates.return_value = [candidate]
+
+    master, is_new, confidence = find_or_create_master_hotel(
+        db=mock_db,
+        name="Marriott",
+        country_code="US",
+        latitude=40.0,
+        longitude=-74.0,
+        street="123 Broad St",
+        city_code=None,
+        stars=4,
+        hotel_type=None,
+        master_city_id=1
+    )
+
+    # Geo candidates found 1 result
+    mock_geo_candidates.assert_called_once()
+    
+    # But names are "Holiday Inn" vs "Marriott" -> rejected. Creates new.
+    assert is_new is True
+    assert master.name == "Marriott"
+    assert confidence == 0.0
 
 
 # ---------------------------------------------------------------------------
